@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Contador Industrial de Láminas</title>
+  <meta name="description" content="PWA Industrial para conteo automático de láminas y placas de acero inoxidable y aluminio apiladas">
+  <meta name="theme-color" content="#07090d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="ContadorHojas">
+  
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/svg+xml" href="assets/icons/icon.svg">
+  <link rel="apple-touch-icon" href="assets/icons/icon.svg">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="appRoot">
+    <!-- Header Superior de Control -->
+    <header class="app-header">
+      <div class="brand-section">
+        <img src="assets/icons/icon.svg" alt="Logo" class="app-logo">
+        <span class="brand-title">Contador Láminas</span>
+        <span class="brand-badge">PRO</span>
+      </div>
+
+      <div class="header-controls">
+        <!-- Botón Linterna (Torch) -->
+        <button id="torchBtn" class="icon-btn" title="Linterna para almacén" aria-label="Linterna">
+          🔦
+        </button>
+        <!-- Gráfico de Diagnóstico Waveform -->
+        <button id="btnWaveform" class="icon-btn" title="Ver Forma de Onda / Señal" aria-label="Diagnóstico">
+          📈
+        </button>
+        <!-- Muestras de Calibración -->
+        <button id="btnOpenSamples" class="icon-btn" title="Muestras de Calibración" aria-label="Muestras">
+          🎯
+        </button>
+        <!-- Ajustes (Gemini API) -->
+        <button id="btnOpenSettings" class="icon-btn" title="Ajustes y API Gemini" aria-label="Ajustes">
+          ⚙️
+        </button>
+      </div>
+    </header>
+
+    <!-- Barra de Selección Rápida (Lente Trasero + Calibre + Modo) -->
+    <section class="quick-settings-bar">
+      <!-- Selector de Cámaras Traseras (Filtro estricto anti-frontales) -->
+      <div class="camera-selector-wrap">
+        <select id="cameraSelect" class="styled-select" title="Lente Trasero">
+          <option value="">Detectando cámaras traseras...</option>
+        </select>
+      </div>
+
+      <!-- Selector de Calibre de Referencia -->
+      <div class="gauge-selector-wrap">
+        <select id="gaugeSelect" class="styled-select" title="Calibre de lámina">
+          <option value="auto">⚡ Detección Automática</option>
+          <option value="quarter">Calibre 1/4" (6.35 mm)</option>
+          <option value="cal10">Calibre 10 (3.42 mm)</option>
+          <option value="cal12">Calibre 12 (2.66 mm)</option>
+          <option value="cal14">Calibre 14 (1.90 mm)</option>
+          <option value="cal20">Calibre 20 (0.91 mm)</option>
+          <option value="cal24">Calibre 24 (0.61 mm)</option>
+        </select>
+      </div>
+
+      <!-- Toggle Modo Local / Gemini Visión -->
+      <div class="mode-switch-wrap" title="Alternar entre Procesamiento Local (CLAHE) o Gemini Visión IA">
+        <span class="mode-switch-label">IA</span>
+        <label class="switch">
+          <input type="checkbox" id="modeToggle">
+          <span class="slider"></span>
+        </label>
+      </div>
+    </section>
+
+    <!-- Visor Principal (Video en vivo o Canvas congelado con ROI) -->
+    <main class="viewport-container" id="cameraContainer">
+      <!-- Video en vivo -->
+      <video id="cameraVideo" autoplay playsinline muted></video>
+
+      <!-- Canvas de imagen congelada para análisis y marcadores -->
+      <canvas id="frozenCanvas"></canvas>
+
+      <!-- Canvas overlay para guías visuales sobre video en vivo -->
+      <canvas id="liveOverlayCanvas"></canvas>
+
+      <!-- Badge de Lente Activo -->
+      <div class="camera-lens-badge" id="cameraBadge">Cámara Trasera</div>
+    </main>
+
+    <!-- Deck Inferior de Resultados y Controles -->
+    <footer class="bottom-control-deck">
+      <!-- Panel de Conteo Expandido (Visible al capturar/cargar imagen) -->
+      <div class="result-panel" id="resultPanel">
+        <div class="result-header">
+          <span class="result-label">Conteo de Piezas</span>
+          <span class="gauge-chip" id="gaugeBadge">Auto</span>
+        </div>
+
+        <div class="result-main">
+          <div class="count-display-wrap">
+            <span class="count-val" id="countNumber">0</span>
+            <span class="count-unit">Piezas</span>
+          </div>
+
+          <!-- Ajuste manual rápido con una sola mano -->
+          <div class="manual-adjust-btns">
+            <button class="btn-adjust" id="btnMinus" title="Disminuir una pieza" aria-label="Menos uno">-1</button>
+            <button class="btn-adjust" id="btnPlus" title="Agregar una pieza" aria-label="Más uno">+1</button>
+          </div>
+        </div>
+
+        <!-- Barra de Micro-Ajuste de Sensibilidad -->
+        <div style="display: flex; align-items: center; gap: 8px; margin: 4px 0;">
+          <span style="font-size: 10px; font-weight: 700; color: var(--text-secondary); width: 75px;">SENSIBILIDAD</span>
+          <input type="range" id="sensitivitySlider" min="30" max="180" value="100" style="flex: 1; accent-color: var(--accent-neon-green); height: 6px;">
+          <span id="sensitivityVal" style="font-size: 11px; font-family: var(--font-mono); width: 38px; text-align: right; color: var(--accent-neon-green);">100%</span>
+        </div>
+
+        <div class="result-footer">
+          <div class="status-badge" id="countStatus">
+            <span class="badge-neutral">Listo para verificar</span>
+          </div>
+
+          <div class="manual-aux-links">
+            <button class="aux-link" id="btnUndo">Deshacer</button>
+            <button class="aux-link" id="btnClear">Limpiar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Fila de Botones Principales de Acción -->
+      <div class="action-buttons-row">
+        <!-- Modo Captura en Vivo -->
+        <button id="btnCapture" class="btn btn-capture" aria-label="Capturar y Contar">
+          <span>⚡ Capturar y Contar</span>
+        </button>
+
+        <button id="btnGallery" class="btn btn-gallery" aria-label="Subir foto de galería">
+          <span>📁 Galería</span>
+        </button>
+        <input type="file" id="galleryInput" accept="image/*" style="display: none;">
+
+        <!-- Botones cuando la imagen está congelada -->
+        <button id="btnRetake" class="btn btn-retake" style="display: none;" aria-label="Nueva Foto">
+          <span>📷 Nueva Foto</span>
+        </button>
+        <button id="btnReanalyze" class="btn btn-reanalyze" style="display: none;" aria-label="Re-procesar">
+          <span>🔄 Recalcular</span>
+        </button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- Modal: Galería de Muestras de Calibración -->
+  <div class="modal-backdrop" id="samplesModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 class="modal-title">🎯 Muestras de Calibración</h3>
+        <button class="modal-close-btn" id="closeSamplesBtn">&times;</button>
+      </div>
+      <p style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+        Selecciona un caso real del almacén para calibrar y comprobar la precisión del conteo:
+      </p>
+      <div class="samples-grid" id="samplesGrid">
+        <!-- Inyectado dinámicamente por app.js -->
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Ajustes y Configuración de Gemini Vision -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 class="modal-title">⚙️ Configuración del Sistema</h3>
+        <button class="modal-close-btn" id="closeSettingsBtn">&times;</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="geminiApiKey">Google Gemini API Key (Modo B)</label>
+        <input type="password" id="geminiApiKey" class="form-input" placeholder="AIzaSy...">
+        <span class="form-hint">Permite el conteo asistido por IA multimodal para calibres delgados. Se guarda de forma local en su dispositivo.</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="geminiModelSelect">Modelo de Visión IA</label>
+        <select id="geminiModelSelect" class="styled-select">
+          <option value="gemini-2.5-flash">Gemini 2.5 Flash (Ultrarrápido y Preciso)</option>
+          <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+          <option value="gemini-2.5-pro">Gemini 2.5 Pro (Máximo Razonamiento)</option>
+        </select>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-top: 10px;">
+        <button id="btnTestGemini" class="btn btn-gallery" style="flex: 1; min-height: 44px; font-size: 13px;">Probar Conexión</button>
+        <button id="btnSaveSettings" class="btn btn-capture" style="flex: 1; min-height: 44px; font-size: 13px;">Guardar Ajustes</button>
+      </div>
+      <div id="settingsStatus"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Diagnóstico de Forma de Onda (Waveform de Proyección) -->
+  <div class="modal-backdrop" id="waveformModal">
+    <div class="modal-sheet">
+      <div class="modal-header">
+        <h3 class="modal-title">📈 Perfil de Intensidades (1D)</h3>
+        <button class="modal-close-btn" id="closeWaveformBtn">&times;</button>
+      </div>
+      <p style="font-size: 12px; color: var(--text-secondary);">
+        Curva de brillo promedio fila por fila en el ROI con sustracción de fondo. Los puntos verdes representan picos detectados (cantos de lámina):
+      </p>
+      <canvas id="waveformCanvas" width="500" height="220"></canvas>
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); font-family: var(--font-mono);">
+        <span>▲ Canto Superior (0 px)</span>
+        <span>▼ Canto Inferior</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Overlay de Carga -->
+  <div class="loading-overlay" id="loadingOverlay">
+    <div class="industrial-spinner"></div>
+    <div class="loading-text" id="loadingText">Procesando...</div>
+  </div>
+
+  <!-- Contenedor de Alertas Toast -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- Scripts de la Aplicación -->
+  <script src="js/camera.js"></script>
+  <script src="js/sheet-counter.js"></script>
+  <script src="js/gemini-counter.js"></script>
+  <script src="js/ui-roi.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

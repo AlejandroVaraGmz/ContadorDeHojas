@@ -1,22 +1,33 @@
 /**
- * gemini-counter.js - Modo B: Integración con API de Visión IA (Gemini Vision)
- * Permite realizar conteo asistido por IA multimodal para calibres ultra delgados
- * o casos complejos con empaques deformados.
+ * gemini-counter.js - Motor 2: Asistente en Tiempo Real con Gemini Vision API (Preconfigurado)
+ * Ejecuta análisis en segundo plano sobre el fotograma del ROI en vivo.
+ * API Key preconfigurada por defecto: AQ.Ab8RN6IRM-D_n4lzxdtXYpyuMj_SX_5gadSL3Mmuh1Px7CPJBQ
  */
 
 class GeminiVisionCounter {
+  static DEFAULT_API_KEY = 'AQ.Ab8RN6IRM-D_n4lzxdtXYpyuMj_SX_5gadSL3Mmuh1Px7CPJBQ';
+  static DEFAULT_MODEL = 'gemini-2.5-flash';
+
   constructor() {
     this.storageKey = 'contador_gemini_api_key';
     this.modelStorageKey = 'contador_gemini_model';
-    this.apiKey = localStorage.getItem(this.storageKey) || '';
-    this.model = localStorage.getItem(this.modelStorageKey) || 'gemini-2.5-flash';
+
+    // Cargar clave de localStorage o usar la preconfigurada por defecto
+    const savedKey = localStorage.getItem(this.storageKey);
+    this.apiKey = savedKey && savedKey.trim() !== '' ? savedKey.trim() : GeminiVisionCounter.DEFAULT_API_KEY;
+    this.model = localStorage.getItem(this.modelStorageKey) || GeminiVisionCounter.DEFAULT_MODEL;
+
+    this.isRequestInProgress = false;
   }
 
   setApiKey(key) {
-    this.apiKey = (key || '').trim();
-    if (this.apiKey) {
-      localStorage.setItem(this.storageKey, this.apiKey);
+    const trimmed = (key || '').trim();
+    if (trimmed) {
+      this.apiKey = trimmed;
+      localStorage.setItem(this.storageKey, trimmed);
     } else {
+      // Revertir a la clave preconfigurada
+      this.apiKey = GeminiVisionCounter.DEFAULT_API_KEY;
       localStorage.removeItem(this.storageKey);
     }
   }
@@ -25,8 +36,8 @@ class GeminiVisionCounter {
     return this.apiKey;
   }
 
-  isConfigured() {
-    return Boolean(this.apiKey && this.apiKey.length > 10);
+  isUsingDefaultKey() {
+    return this.apiKey === GeminiVisionCounter.DEFAULT_API_KEY;
   }
 
   setModel(model) {
@@ -35,140 +46,137 @@ class GeminiVisionCounter {
   }
 
   /**
-   * Envía la imagen recortada del ROI o la imagen completa a Gemini Vision
-   * @param {HTMLCanvasElement} roiCanvas - Canvas con la imagen del área de interés
-   * @param {string} gaugeName - Nombre del calibre seleccionado (ej. "Calibre 14")
-   * @param {Object} contextInfo - Información auxiliar (ej. altura en píxeles)
-   * @returns {Promise<Object>} { count, confidence, explanation, markers, rawResponse }
+   * Extrae un fotograma optimizado del ROI para enviar a Gemini Vision
+   * @param {HTMLVideoElement|HTMLCanvasElement} source - Origen del video o canvas congelado
+   * @param {Object} roi - { x, y, width, height }
+   * @returns {string} Base64 JPEG sin el prefijo data:image/jpeg;base64,
    */
-  async countSheetsWithGemini(roiCanvas, gaugeName = 'Detección Automática', contextInfo = {}) {
-    if (!this.isConfigured()) {
-      throw new Error('API Key de Gemini no configurada. Ingrésela en los Ajustes (⚙️).');
+  extractRoiBase64(source, roi) {
+    const rx = Math.max(0, Math.round(roi.x));
+    const ry = Math.max(0, Math.round(roi.y));
+    const rw = Math.round(roi.width);
+    const rh = Math.round(roi.height);
+
+    const tempCanvas = document.createElement('canvas');
+    // Escalar moderadamente el ROI a max 640px de altura para envío ultrarrápido por red
+    const maxH = 640;
+    const scale = rh > maxH ? (maxH / rh) : 1.0;
+    tempCanvas.width = Math.round(rw * scale);
+    tempCanvas.height = Math.round(rh * scale);
+
+    const tCtx = tempCanvas.getContext('2d');
+    tCtx.drawImage(
+      source,
+      rx, ry, rw, rh,
+      0, 0, tempCanvas.width, tempCanvas.height
+    );
+
+    const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.88);
+    return dataUrl.split(',')[1];
+  }
+
+  /**
+   * Envía el frame del ROI a Gemini 2.5 Flash con el prompt de visión industrial
+   * @param {HTMLVideoElement|HTMLCanvasElement} source - Video o canvas
+   * @param {Object} roi - Coordenadas del ROI
+   * @param {string} gaugeName - Calibre seleccionado (ej. 'Calibre 14')
+   * @returns {Promise<Object>} { total_piezas, coordenadas_y, confianza }
+   */
+  async countSheetsLive(source, roi, gaugeName = 'Detección Automática') {
+    if (this.isRequestInProgress) {
+      throw new Error('Ya hay una consulta a Gemini en curso');
     }
 
-    // Convertir canvas a JPEG Base64
-    const dataUrl = roiCanvas.toDataURL('image/jpeg', 0.92);
-    const base64Data = dataUrl.split(',')[1];
-
-    const prompt = `
-Eres un inspector industrial de control de calidad y visión artificial especializado en metalurgia.
-Analiza con máxima precisión esta fotografía del canto de un paquete de láminas/chapas de acero inoxidable o aluminio apiladas.
-
-OBJETIVO CRÍTICO:
-Contar el NÚMERO EXACTO de láminas metálicas individuales apiladas una sobre otra.
-
-REGLAS DE INSPECCIÓN ESTRICTAS:
-1. Cuenta ÚNICAMENTE láminas metálicas de acero o aluminio (cantos brillantes o gris metálico con ranuras oscuras entre ellas).
-2. EXCLUYE COMPLETAMENTE las ondas del cartón corrugado (flautas sinusoidales marrones/cartón Kraft) en la parte superior e inferior.
-3. EXCLUYE tarimas de madera, etiquetas adhesivas de papel blanco, flejes plásticos y rebordes de cartón protector.
-4. Calibre de referencia esperado: "${gaugeName}".
-5. Para cada lámina detectada, proporciona su posición vertical normalizada ('y_pct') como un porcentaje del 0 al 100 de arriba a abajo de esta imagen.
-
-RESPONDE OBLIGATORIAMENTE EN FORMATO JSON ESTRICTO CON ESTA ESTRUCTURA:
-{
-  "sheet_count": <número entero exacto de láminas>,
-  "confidence": "high" | "medium" | "low",
-  "calibre_estimated": "<calibre estimado>",
-  "y_positions_normalized": [<array de números entre 0 y 100 indicando la altura vertical de cada lámina>],
-  "cardboard_top_excluded": true | false,
-  "cardboard_bottom_excluded": true | false,
-  "explanation": "<explicación técnica concisa en español del conteo realizado>"
-}
-`;
-
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
-
-    const requestBody = {
-      contents: [
-        {
-          parts: [
-            { text: prompt },
-            {
-              inlineData: {
-                mimeType: 'image/jpeg',
-                data: base64Data
-              }
-            }
-          ]
-        }
-      ],
-      generationConfig: {
-        responseMimeType: 'application/json',
-        temperature: 0.1
-      }
-    };
+    this.isRequestInProgress = true;
 
     try {
+      const base64Data = this.extractRoiBase64(source, roi);
+
+      const prompt = `Eres un sistema experto de visión industrial. Analiza este fotograma en vivo del perfil de un empaque de láminas de acero inoxidable/aluminio. Calibre seleccionado: ${gaugeName}. Referencias: Cal 1/4" (~2 pzs), Cal 10 (~8 pzs), Cal 12 (~15 pzs), Cal 14 (~24 pzs), Cal 24 (~51 pzs), Cal 20 (~75 pzs).
+Instrucciones:
+1. Ignora el cartón corrugado (con ondas) arriba y abajo, la tarima de madera y las etiquetas.
+2. Cuenta solo los cantos horizontales de las láminas metálicas.
+3. Responde solo en JSON:
+{
+  "total_piezas": <entero>,
+  "coordenadas_y": [<arreglo de decimales de 0.0 a 1.0 con la posición vertical de cada lámina>],
+  "confianza": "Alta" | "Media" | "Baja"
+}`;
+
+      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: 'image/jpeg',
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          temperature: 0.1
+        }
+      };
+
       const response = await fetch(endpoint, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestBody)
       });
 
       if (!response.ok) {
         const errorBody = await response.json().catch(() => ({}));
-        const errMsg = errorBody.error?.message || `Error HTTP ${response.status}: ${response.statusText}`;
-        throw new Error(`Error en API de Gemini: ${errMsg}`);
+        const errMsg = errorBody.error?.message || `Error HTTP ${response.status}`;
+        throw new Error(`Gemini API: ${errMsg}`);
       }
 
       const json = await response.json();
       const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
 
       if (!rawText) {
-        throw new Error('La respuesta de Gemini no contiene candidatos válidos.');
+        throw new Error('Respuesta vacía de Gemini.');
       }
 
       const parsed = JSON.parse(rawText);
-      const count = parseInt(parsed.sheet_count, 10) || 0;
-
-      // Mapear posiciones porcentuales a coordenadas en el canvas del ROI
-      const roiHeight = roiCanvas.height;
-      const markers = (parsed.y_positions_normalized || []).map((pct, idx) => {
-        const roiY = Math.round((pct / 100) * roiHeight);
-        return {
-          id: idx + 1,
-          roiY: roiY,
-          confidence: parsed.confidence
-        };
-      });
+      const totalPiezas = parseInt(parsed.total_piezas, 10) || 0;
+      const coords = Array.isArray(parsed.coordenadas_y) ? parsed.coordenadas_y : [];
+      const confianza = parsed.confianza || 'Media';
 
       return {
-        count: count,
-        confidence: parsed.confidence || 'medium',
-        explanation: parsed.explanation || 'Conteo completado con Gemini Vision.',
-        calibreEstimated: parsed.calibre_estimated,
-        markers: markers,
+        total_piezas: totalPiezas,
+        coordenadas_y: coords,
+        confianza: confianza,
         raw: parsed
       };
-    } catch (err) {
-      console.error('[GeminiVision] Error al procesar:', err);
-      throw err;
+    } finally {
+      this.isRequestInProgress = false;
     }
   }
 
   /**
-   * Prueba rápida de conexión con la API Key configurada
+   * Prueba de conectividad con la API
    */
   async testConnection() {
-    if (!this.isConfigured()) {
-      return { success: false, message: 'La API Key está vacía.' };
-    }
     const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}?key=${this.apiKey}`;
     try {
       const res = await fetch(endpoint);
       if (res.ok) {
-        return { success: true, message: `Conexión exitosa con ${this.model}` };
+        return { success: true, message: `Conexión verificada con ${this.model}` };
       } else {
         const err = await res.json().catch(() => ({}));
         return { success: false, message: err.error?.message || `Error ${res.status}` };
       }
     } catch (e) {
-      return { success: false, message: e.message || 'Error de red o sin conexión' };
+      return { success: false, message: e.message || 'Error de red' };
     }
   }
 }
 
-// Exportar globalmente
 window.GeminiVisionCounter = GeminiVisionCounter;

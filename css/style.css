@@ -1,21 +1,21 @@
 /* ==========================================================================
-   Contador Industrial de Láminas - Estilos PWA de Alto Contraste
-   Optimizado para Almacén, Operación con Una Sola Mano y Modo Oscuro OLED
+   Contador Industrial de Láminas - Estilos PWA en Tiempo Real (Live 30 FPS)
+   Diseño de Alto Contraste OLED, HUD de Realidad Aumentada y Ergonomía Táctil
    ========================================================================== */
 
 :root {
   --bg-dark: #07090d;
   --bg-surface: #0f141c;
   --bg-surface-elevated: #18202d;
-  --bg-surface-glass: rgba(15, 20, 28, 0.88);
+  --bg-glass: rgba(15, 20, 28, 0.88);
   --border-subtle: #232d3f;
   --border-strong: #3b4861;
 
   --accent-neon-green: #22c55e;
-  --accent-neon-green-glow: rgba(34, 197, 94, 0.4);
+  --accent-neon-green-glow: rgba(34, 197, 94, 0.45);
   --accent-cyan: #00f0ff;
-  --accent-cyan-glow: rgba(0, 240, 255, 0.35);
   --accent-amber: #eab308;
+  --accent-purple: #a855f7;
   --accent-danger: #ef4444;
 
   --text-primary: #f8fafc;
@@ -27,8 +27,6 @@
 
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
-  --safe-left: env(safe-area-inset-left, 0px);
-  --safe-right: env(safe-area-inset-right, 0px);
 }
 
 * {
@@ -70,7 +68,7 @@ html, body {
   padding: calc(6px + var(--safe-top)) 12px 6px 12px;
   background-color: var(--bg-surface);
   border-bottom: 2px solid var(--border-subtle);
-  z-index: 20;
+  z-index: 25;
   gap: 8px;
 }
 
@@ -95,15 +93,21 @@ html, body {
   text-transform: uppercase;
 }
 
-.brand-badge {
+.live-indicator-pill {
   font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--bg-surface-elevated);
-  border: 1px solid var(--accent-amber);
-  color: var(--accent-amber);
+  padding: 2px 7px;
+  border-radius: 12px;
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid var(--accent-danger);
+  color: #fca5a5;
   font-family: var(--font-mono);
-  font-weight: 700;
+  font-weight: 800;
+  animation: pulseLive 1.8s infinite;
+}
+
+@keyframes pulseLive {
+  0%, 100% { opacity: 1; border-color: var(--accent-danger); }
+  50% { opacity: 0.6; border-color: transparent; }
 }
 
 .header-controls {
@@ -136,28 +140,28 @@ html, body {
   background: var(--accent-amber);
   color: #000;
   border-color: var(--accent-amber);
-  box-shadow: 0 0 12px rgba(234, 179, 8, 0.4);
+  box-shadow: 0 0 12px rgba(234, 179, 8, 0.5);
 }
 
 /* ==========================================================================
-   Barra de Selección de Lente y Calibre (Sticky Superior)
+   Barra Superior de Selección Rápida en Vivo
    ========================================================================== */
 .quick-settings-bar {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background-color: var(--bg-surface-glass);
+  background-color: var(--bg-glass);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border-subtle);
-  z-index: 15;
+  z-index: 20;
   overflow-x: auto;
 }
 
 .camera-selector-wrap,
 .gauge-selector-wrap {
   flex: 1;
-  min-width: 140px;
+  min-width: 130px;
 }
 
 .styled-select {
@@ -178,7 +182,7 @@ html, body {
   border-color: var(--accent-cyan);
 }
 
-/* Switch Modo Local / Gemini */
+/* Switch Auto-IA 3s */
 .mode-switch-wrap {
   display: flex;
   align-items: center;
@@ -199,8 +203,8 @@ html, body {
 .switch {
   position: relative;
   display: inline-block;
-  width: 44px;
-  height: 24px;
+  width: 40px;
+  height: 22px;
 }
 
 .switch input {
@@ -215,14 +219,14 @@ html, body {
   top: 0; left: 0; right: 0; bottom: 0;
   background-color: #334155;
   transition: 0.2s;
-  border-radius: 24px;
+  border-radius: 22px;
 }
 
 .slider:before {
   position: absolute;
   content: "";
-  height: 18px;
-  width: 18px;
+  height: 16px;
+  width: 16px;
   left: 3px;
   bottom: 3px;
   background-color: white;
@@ -231,15 +235,15 @@ html, body {
 }
 
 input:checked + .slider {
-  background-color: #8b5cf6;
+  background-color: var(--accent-purple);
 }
 
 input:checked + .slider:before {
-  transform: translateX(20px);
+  transform: translateX(18px);
 }
 
 /* ==========================================================================
-   Contenedor Principal del Visor (Cámara / Canvas)
+   Visor de Escaneo a Pantalla Completa (Video + Canvas AR)
    ========================================================================== */
 .viewport-container {
   flex: 1;
@@ -251,46 +255,146 @@ input:checked + .slider:before {
   justify-content: center;
 }
 
-#cameraVideo,
-#frozenCanvas,
-#liveOverlayCanvas {
+#cameraVideo {
   position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: cover;
+  z-index: 1;
 }
 
-#frozenCanvas {
-  display: none;
-  z-index: 5;
+#arCanvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 2;
+  cursor: crosshair;
 }
 
-#liveOverlayCanvas {
-  z-index: 6;
-  pointer-events: none;
-}
-
-/* Badge flotante de estado de cámara */
-.camera-lens-badge {
+/* Badges flotantes en la parte superior del visor */
+.hud-top-badges {
   position: absolute;
   top: 10px;
   left: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.7);
-  border: 1px solid var(--accent-cyan);
-  color: var(--accent-cyan);
-  font-size: 11px;
-  font-weight: 700;
-  font-family: var(--font-mono);
+  display: flex;
+  gap: 6px;
   z-index: 10;
   pointer-events: none;
 }
 
+.hud-chip {
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  backdrop-filter: blur(4px);
+}
+
+.fps-chip {
+  background: rgba(0, 0, 0, 0.7);
+  border: 1px solid var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+.ia-badge, .ia-chip {
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid var(--accent-purple);
+  color: #d8b4fe;
+}
+
+.ia-chip.active {
+  animation: pulseIa 1s infinite alternate;
+}
+
+.ia-chip.success {
+  background: rgba(34, 197, 94, 0.25);
+  border-color: var(--accent-neon-green);
+  color: var(--accent-neon-green);
+}
+
+.ia-chip.error {
+  background: rgba(239, 68, 68, 0.25);
+  border-color: var(--accent-danger);
+  color: #fca5a5;
+}
+
+@keyframes pulseIa {
+  from { opacity: 0.6; }
+  to { opacity: 1; }
+}
+
 /* ==========================================================================
-   Panel Inferior de Resultados y Controles Principales
+   Contador Gigante en Vivo (HUD Flotante Inferior)
+   ========================================================================== */
+.live-counter-hud {
+  position: absolute;
+  bottom: 14px;
+  left: 12px;
+  right: 12px;
+  background: rgba(10, 14, 20, 0.88);
+  border: 2px solid var(--accent-neon-green);
+  box-shadow: 0 0 20px var(--accent-neon-green-glow);
+  border-radius: 12px;
+  padding: 8px 16px;
+  backdrop-filter: blur(10px);
+  z-index: 10;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.live-counter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.live-prefix {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+.live-gauge-tag {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-amber);
+  font-family: var(--font-mono);
+}
+
+.live-counter-body {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.live-count-num {
+  font-size: 52px;
+  font-weight: 900;
+  font-family: var(--font-mono);
+  color: var(--accent-neon-green);
+  line-height: 1;
+  text-shadow: 0 0 14px var(--accent-neon-green-glow);
+}
+
+.live-count-unit {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--text-primary);
+  letter-spacing: 1.5px;
+}
+
+/* ==========================================================================
+   Deck Inferior de Control
    ========================================================================== */
 .bottom-control-deck {
   display: flex;
@@ -298,89 +402,62 @@ input:checked + .slider:before {
   background: var(--bg-surface);
   border-top: 2px solid var(--border-subtle);
   padding: 8px 12px calc(8px + var(--safe-bottom)) 12px;
-  z-index: 20;
+  z-index: 25;
   gap: 8px;
 }
 
-/* Panel de Resultados Expandible al Congelar Imagen */
-.result-panel {
+/* Panel de Edición Manual Táctil (Al congelar) */
+.manual-edit-panel {
   display: none;
   flex-direction: column;
   background: var(--bg-surface-elevated);
-  border: 1.5px solid var(--accent-neon-green);
-  box-shadow: 0 0 16px var(--accent-neon-green-glow);
+  border: 1.5px solid var(--border-strong);
   border-radius: 10px;
-  padding: 10px 14px;
-  animation: slideUp 0.25s ease-out;
+  padding: 8px 12px;
+  gap: 6px;
+  animation: slideUp 0.2s ease-out;
 }
 
-.result-panel.visible {
+.manual-edit-panel.visible {
   display: flex;
 }
 
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.result-header {
+.edit-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.result-label {
+.edit-title {
   font-size: 11px;
   font-weight: 800;
-  text-transform: uppercase;
+  color: var(--accent-amber);
+}
+
+.manual-aux-links {
+  display: flex;
+  gap: 12px;
+}
+
+.aux-link {
+  background: none;
+  border: none;
   color: var(--text-secondary);
-  letter-spacing: 1px;
-}
-
-.gauge-chip {
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 4px;
-  background: #022c22;
-  border: 1px solid var(--accent-neon-green);
-  color: var(--accent-neon-green);
-  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
 }
 
-.result-main {
+.edit-panel-body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 4px 0;
-}
-
-.count-display-wrap {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-}
-
-.count-val {
-  font-size: 42px;
-  font-weight: 900;
-  font-family: var(--font-mono);
-  color: var(--accent-neon-green);
-  line-height: 1;
-  text-shadow: 0 0 10px var(--accent-neon-green-glow);
-}
-
-.count-unit {
-  font-size: 16px;
-  font-weight: 800;
-  color: var(--text-primary);
-  text-transform: uppercase;
-}
-
-/* Botones de Ajuste Manual +1 / -1 Grandes para Pulgar */
-.manual-adjust-btns {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .btn-adjust {
@@ -406,44 +483,44 @@ input:checked + .slider:before {
   border-color: var(--accent-neon-green);
 }
 
-.result-footer {
+.edit-hint {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  flex: 1;
+}
+
+.slider-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding-top: 6px;
+  gap: 8px;
+  padding-top: 4px;
   border-top: 1px solid var(--border-subtle);
-  margin-top: 4px;
 }
 
-.status-badge {
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.badge-success { color: var(--accent-neon-green); }
-.badge-warning { color: var(--accent-amber); }
-.badge-neutral { color: var(--accent-cyan); }
-
-.manual-aux-links {
-  display: flex;
-  gap: 12px;
-}
-
-.aux-link {
-  background: none;
-  border: none;
+.slider-label {
+  font-size: 10px;
+  font-weight: 700;
   color: var(--text-secondary);
-  font-size: 11px;
-  text-decoration: underline;
-  cursor: pointer;
+  width: 75px;
 }
 
-.aux-link:active {
-  color: var(--text-primary);
+.slider-row input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent-neon-green);
+  height: 6px;
+}
+
+.slider-val {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  width: 36px;
+  text-align: right;
+  color: var(--accent-neon-green);
 }
 
 /* ==========================================================================
-   Botones de Acción de Alto Impacto
+   Botones de Acción Principales
    ========================================================================== */
 .action-buttons-row {
   display: flex;
@@ -456,29 +533,47 @@ input:checked + .slider:before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   border-radius: 12px;
   font-weight: 800;
-  font-size: 15px;
+  font-size: 14px;
   border: none;
   cursor: pointer;
   transition: all 0.15s ease;
-  min-height: 54px;
+  min-height: 52px;
 }
 
 .btn:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
-.btn-capture {
+.btn-freeze {
   flex: 2;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
   border: 2px solid #34d399;
-  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.45);
-  font-size: 17px;
+  box-shadow: 0 4px 16px rgba(16, 185, 129, 0.45);
+  font-size: 16px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+.btn-resume {
+  flex: 2;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  border: 2px solid #38bdf8;
+  box-shadow: 0 4px 16px rgba(2, 132, 199, 0.45);
+  font-size: 15px;
+  text-transform: uppercase;
+}
+
+.btn-ia {
+  flex: 1.2;
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  color: #ffffff;
+  border: 1.5px solid #a855f7;
+  font-size: 13px;
 }
 
 .btn-gallery {
@@ -486,30 +581,16 @@ input:checked + .slider:before {
   background: var(--bg-surface-elevated);
   border: 1.5px solid var(--border-strong);
   color: var(--text-primary);
-  font-size: 13px;
-}
-
-.btn-retake {
-  flex: 1;
-  background: #334155;
-  color: #f8fafc;
-  border: 1px solid #475569;
-}
-
-.btn-reanalyze {
-  flex: 1;
-  background: #0284c7;
-  color: #fff;
-  border: 1.5px solid #38bdf8;
+  font-size: 12px;
 }
 
 /* ==========================================================================
-   Modales (Galería de Muestras, Ajustes, Diagnóstico)
+   Modales (Galería, Ajustes, Waveform)
    ========================================================================== */
 .modal-backdrop {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0, 0, 0, 0.82);
+  background: rgba(0, 0, 0, 0.84);
   backdrop-filter: blur(6px);
   z-index: 100;
   display: none;
@@ -550,7 +631,7 @@ input:checked + .slider:before {
 }
 
 .modal-title {
-  font-size: 17px;
+  font-size: 16px;
   font-weight: 800;
   color: var(--text-primary);
 }
@@ -564,7 +645,7 @@ input:checked + .slider:before {
   line-height: 1;
 }
 
-/* Tarjetas de Muestras de Calibración */
+/* Tarjetas de Muestras */
 .samples-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -583,8 +664,8 @@ input:checked + .slider:before {
 
 .sample-thumb-wrapper {
   position: relative;
-  width: 80px;
-  height: 90px;
+  width: 78px;
+  height: 88px;
   border-radius: 6px;
   overflow: hidden;
   background: #000;
@@ -602,7 +683,7 @@ input:checked + .slider:before {
   bottom: 4px;
   left: 4px;
   right: 4px;
-  background: rgba(0, 0, 0, 0.8);
+  background: rgba(0, 0, 0, 0.85);
   border: 1px solid var(--accent-neon-green);
   color: var(--accent-neon-green);
   font-size: 9px;
@@ -658,7 +739,7 @@ input:checked + .slider:before {
   font-weight: 800;
 }
 
-/* Formulario Ajustes */
+/* Formularios Ajustes */
 .form-group {
   display: flex;
   flex-direction: column;
@@ -679,7 +760,7 @@ input:checked + .slider:before {
   color: var(--text-primary);
   padding: 10px 12px;
   border-radius: 8px;
-  font-size: 14px;
+  font-size: 13px;
   font-family: var(--font-mono);
   outline: none;
 }
@@ -712,7 +793,7 @@ input:checked + .slider:before {
   color: var(--accent-danger);
 }
 
-/* Gráfico de Diagnóstico (Waveform) */
+/* Waveform Canvas */
 #waveformCanvas {
   width: 100%;
   height: 220px;
@@ -742,8 +823,8 @@ input:checked + .slider:before {
 }
 
 .industrial-spinner {
-  width: 56px;
-  height: 56px;
+  width: 52px;
+  height: 52px;
   border: 4px solid var(--border-strong);
   border-top-color: var(--accent-neon-green);
   border-radius: 50%;
@@ -755,7 +836,7 @@ input:checked + .slider:before {
 }
 
 .loading-text {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -763,7 +844,7 @@ input:checked + .slider:before {
 
 .toast-container {
   position: fixed;
-  top: calc(14px + var(--safe-top));
+  top: calc(12px + var(--safe-top));
   left: 12px;
   right: 12px;
   z-index: 300;
@@ -781,7 +862,7 @@ input:checked + .slider:before {
   border-radius: 8px;
   font-size: 13px;
   font-weight: 600;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6);
   opacity: 0;
   transform: translateY(-8px);
   transition: all 0.25s ease;

@@ -17,7 +17,8 @@ const STATIC_ASSETS = [
   './assets/samples/muestra2_cal12_15piezas.jpg',
   './assets/samples/muestra3_cal1_4_2piezas.jpg',
   './assets/samples/muestra4_cal14_24piezas.jpg',
-  './assets/samples/muestra5_cal24_51piezas.jpg'
+  './assets/samples/muestra5_cal24_51piezas.jpg',
+  './assets/samples/muestra6_cal20_75piezas.jpg'
 ];
 
 self.addEventListener('install', (event) => {

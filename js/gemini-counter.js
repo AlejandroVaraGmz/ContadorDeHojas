@@ -1,31 +1,42 @@
 /**
  * gemini-counter.js - Motor 2: Conexión a Gemini Vision API (Tiempo Real)
- * Endpoint oficial: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}
- * Modelos soportados: gemini-2.5-flash (predeterminado) y gemini-1.5-flash.
- * Clave preconfigurada: AQ.Ab8RN6IRM-D_n4lzxdtXYpyuMj_SX_5gadSL3Mmuh1Px7CPJBQ
+ * Endpoint: https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${API_KEY}
+ *
+ * NOTA: gemini-2.5-flash y gemini-1.5-flash ya NO están disponibles para esta cuenta
+ * (la API responde 404 "no longer available to new users"). El modelo vigente
+ * recomendado por la propia API es gemini-3.8-flash. Si un modelo responde 404/429/503
+ * se prueba automáticamente el siguiente de la lista MODEL_CHAIN.
  */
 
 class GeminiVisionCounter {
   static DEFAULT_API_KEY = 'AQ.Ab8RN6IRM-D_n4lzxdtXYpyuMj_SX_5gadSL3Mmuh1Px7CPJBQ';
-  static DEFAULT_MODEL = 'gemini-2.5-flash';
+
+  // Modelos vigentes en orden de preferencia (verificados contra ListModels de esta clave)
+  static MODEL_CHAIN = [
+    'gemini-3.8-flash',
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+    'gemini-3.5-flash'
+  ];
+  static DEFAULT_MODEL = 'gemini-3.8-flash';
 
   constructor() {
     this.storageKey = 'contador_gemini_api_key';
     this.modelStorageKey = 'contador_gemini_model';
 
-    // Cargar clave guardada o usar la clave preconfigurada
     const savedKey = localStorage.getItem(this.storageKey);
     this.apiKey = (savedKey && savedKey.trim() !== '') ? savedKey.trim() : GeminiVisionCounter.DEFAULT_API_KEY;
 
-    // Validar modelo vigente (estrictamente gemini-2.5-flash o gemini-1.5-flash)
+    // Si en localStorage quedó un modelo obsoleto (ej. gemini-2.5-flash), se descarta y se migra
     const savedModel = localStorage.getItem(this.modelStorageKey);
-    if (savedModel === 'gemini-1.5-flash' || savedModel === 'gemini-2.5-flash') {
+    if (savedModel && GeminiVisionCounter.MODEL_CHAIN.includes(savedModel)) {
       this.model = savedModel;
     } else {
-      this.model = GeminiVisionCounter.DEFAULT_MODEL; // gemini-2.5-flash
+      this.model = GeminiVisionCounter.DEFAULT_MODEL;
       localStorage.setItem(this.modelStorageKey, this.model);
     }
 
+    this.lastModelUsed = this.model;
     this.isRequestInProgress = false;
   }
 
@@ -49,19 +60,66 @@ class GeminiVisionCounter {
   }
 
   setModel(model) {
-    if (model === 'gemini-1.5-flash' || model === 'gemini-2.5-flash') {
-      this.model = model;
-    } else {
-      this.model = GeminiVisionCounter.DEFAULT_MODEL;
-    }
+    this.model = GeminiVisionCounter.MODEL_CHAIN.includes(model) ? model : GeminiVisionCounter.DEFAULT_MODEL;
     localStorage.setItem(this.modelStorageKey, this.model);
   }
 
   /**
-   * Extrae el recorte del ROI en Base64 JPEG optimizado para análisis inmediato
-   * @param {HTMLVideoElement|HTMLCanvasElement} source - Video en vivo o canvas congelado
-   * @param {Object} roi - { x, y, width, height }
-   * @returns {string} Base64 sin encabezado data:image/jpeg;base64,
+   * Lista de modelos a intentar: primero el elegido, luego el resto de la cadena
+   */
+  _modelsToTry() {
+    const rest = GeminiVisionCounter.MODEL_CHAIN.filter(m => m !== this.model);
+    return [this.model, ...rest];
+  }
+
+  _endpoint(model) {
+    return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${this.apiKey}`;
+  }
+
+  /**
+   * POST con reintento automático entre modelos ante 404 / 429 / 500 / 503
+   */
+  async _postWithFallback(requestBody) {
+    let lastError = null;
+
+    for (const model of this._modelsToTry()) {
+      try {
+        console.log(`[GeminiVision] POST -> models/${model}:generateContent`);
+        const response = await fetch(this._endpoint(model), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody)
+        });
+
+        if (response.ok) {
+          this.lastModelUsed = model;
+          return { response, model };
+        }
+
+        const errorBody = await response.json().catch(() => ({}));
+        const msg = errorBody.error?.message || `Error HTTP ${response.status}`;
+        lastError = new Error(`Gemini API (${model}): ${msg}`);
+
+        // Errores recuperables: probar el siguiente modelo
+        if ([404, 429, 500, 503].includes(response.status)) {
+          console.warn(`[GeminiVision] ${model} -> ${response.status}. Probando siguiente modelo...`);
+          continue;
+        }
+        // Errores no recuperables (400 clave inválida, 403, etc.)
+        throw lastError;
+      } catch (e) {
+        if (e === lastError) throw e;
+        // Error de red: reintentar con el siguiente
+        lastError = e;
+        console.warn(`[GeminiVision] Error de red con ${model}:`, e);
+      }
+    }
+
+    throw lastError || new Error('No hay modelos de Gemini disponibles.');
+  }
+
+  /**
+   * Extrae el recorte del ROI en Base64 JPEG
    */
   extractRoiBase64(source, roi) {
     const rx = Math.max(0, Math.round(roi.x));
@@ -70,30 +128,20 @@ class GeminiVisionCounter {
     const rh = Math.round(roi.height);
 
     const tempCanvas = document.createElement('canvas');
-    // Escalar altura a max 720px para velocidad de transmisión sin pérdida de resolución de cantos
     const maxH = 720;
     const scale = rh > maxH ? (maxH / rh) : 1.0;
     tempCanvas.width = Math.round(rw * scale);
     tempCanvas.height = Math.round(rh * scale);
 
     const tCtx = tempCanvas.getContext('2d');
-    tCtx.drawImage(
-      source,
-      rx, ry, rw, rh,
-      0, 0, tempCanvas.width, tempCanvas.height
-    );
+    tCtx.drawImage(source, rx, ry, rw, rh, 0, 0, tempCanvas.width, tempCanvas.height);
 
     const dataUrl = tempCanvas.toDataURL('image/jpeg', 0.90);
     return dataUrl.split(',')[1];
   }
 
   /**
-   * Realiza la petición POST a la API de Gemini Vision
-   * URL exacta: https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}
-   * @param {HTMLVideoElement|HTMLCanvasElement} source - Origen de imagen o video
-   * @param {Object} roi - Región de interés
-   * @param {string} gaugeName - Calibre seleccionado
-   * @returns {Promise<Object>} { total_piezas, coordenadas_y, confianza }
+   * Envía el recorte del ROI a Gemini y devuelve { total_piezas, coordenadas_y, confianza }
    */
   async countSheetsLive(source, roi, gaugeName = 'Detección Automática') {
     if (this.isRequestInProgress) {
@@ -116,21 +164,12 @@ Instrucciones:
   "confianza": "Alta" | "Media" | "Baja"
 }`;
 
-      // Endpoint exacto: https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}
-      const modelToUse = (this.model === 'gemini-1.5-flash') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
-      const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${this.apiKey}`;
-
       const requestBody = {
         contents: [
           {
             parts: [
               { text: prompt },
-              {
-                inlineData: {
-                  mimeType: 'image/jpeg',
-                  data: base64Data
-                }
-              }
+              { inlineData: { mimeType: 'image/jpeg', data: base64Data } }
             ]
           }
         ],
@@ -140,41 +179,12 @@ Instrucciones:
         }
       };
 
-      console.log(`[GeminiVision] Enviando petición POST a: ${endpoint.split('?')[0]}?key=***`);
-
-      let response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
-      });
-
-      // Si el modelo devuelve 404 o 503, intentar fallback automático entre gemini-2.5-flash y gemini-1.5-flash
-      if (!response.ok && (response.status === 404 || response.status === 503)) {
-        console.warn(`[GeminiVision] ${modelToUse} devolvió ${response.status}. Intentando fallback alternativo...`);
-        const fallbackModel = (modelToUse === 'gemini-2.5-flash') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
-        const fallbackEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${fallbackModel}:generateContent?key=${this.apiKey}`;
-        try {
-          const fallbackRes = await fetch(fallbackEndpoint, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(requestBody)
-          });
-          if (fallbackRes.ok) {
-            response = fallbackRes;
-          }
-        } catch (e) {
-          console.warn('[GeminiVision] Fallback falló:', e);
-        }
-      }
-
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        const errMsg = errorBody.error?.message || `Error HTTP ${response.status}`;
-        throw new Error(`Gemini API (${modelToUse}): ${errMsg}`);
-      }
+      const { response, model } = await this._postWithFallback(requestBody);
 
       const json = await response.json();
-      const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+      // Algunos modelos con razonamiento devuelven varias partes; tomamos la primera con texto
+      const parts = json.candidates?.[0]?.content?.parts || [];
+      const rawText = (parts.find(p => typeof p.text === 'string' && !p.thought) || {}).text;
 
       if (!rawText) {
         throw new Error('La respuesta de Gemini no contiene datos válidos.');
@@ -182,14 +192,16 @@ Instrucciones:
 
       const parsed = JSON.parse(rawText);
       const totalPiezas = parseInt(parsed.total_piezas, 10) || 0;
-      const coords = Array.isArray(parsed.coordenadas_y) ? parsed.coordenadas_y : [];
+      const coords = (Array.isArray(parsed.coordenadas_y) ? parsed.coordenadas_y : [])
+        .map(Number)
+        .filter(v => Number.isFinite(v) && v >= 0 && v <= 1);
       const confianza = parsed.confianza || 'Media';
 
       return {
         total_piezas: totalPiezas,
         coordenadas_y: coords,
         confianza: confianza,
-        modelUsed: modelToUse,
+        modelUsed: model,
         raw: parsed
       };
     } finally {
@@ -198,30 +210,17 @@ Instrucciones:
   }
 
   /**
-   * Prueba de conectividad con la API
+   * Prueba de conectividad (usa la misma cadena de modelos)
    */
   async testConnection() {
-    const modelToUse = (this.model === 'gemini-1.5-flash') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
-    const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${modelToUse}:generateContent?key=${this.apiKey}`;
-
     const testBody = {
       contents: [{ parts: [{ text: 'Responde solo en JSON: {"status": "ok"}' }] }],
       generationConfig: { responseMimeType: 'application/json' }
     };
 
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testBody)
-      });
-
-      if (res.ok) {
-        return { success: true, message: `Conexión exitosa con ${modelToUse}` };
-      } else {
-        const err = await res.json().catch(() => ({}));
-        return { success: false, message: err.error?.message || `Error HTTP ${res.status}` };
-      }
+      const { model } = await this._postWithFallback(testBody);
+      return { success: true, message: `Conexión exitosa con ${model}` };
     } catch (e) {
       return { success: false, message: e.message || 'Error de red o sin conexión' };
     }

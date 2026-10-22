@@ -12,11 +12,12 @@ class ROIViewer {
     this.onRoiChanged = options.onRoiChanged || null;
 
     // ROI en coordenadas relativas (0.0 a 1.0)
+    // Ampliado hacia arriba: el borde inferior se mantiene en 0.72 (0.16 + 0.56)
     this.roiRelative = {
       x: 0.22,
-      y: 0.32,
+      y: 0.16,
       width: 0.56,
-      height: 0.40
+      height: 0.56
     };
 
     this.isFrozen = false;

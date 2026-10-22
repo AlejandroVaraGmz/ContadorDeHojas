@@ -356,7 +356,7 @@ class RealTimeSheetCounterApp {
 
     this.iaStatusBadge.textContent = 'IA: Analizando...';
     this.iaStatusBadge.className = 'ia-badge active';
-    this.showToast('Enviando frame a Gemini 2.5 Flash...', 'info', 2000);
+    this.showToast('Enviando frame a Gemini Vision...', 'info', 2000);
 
     try {
       const result = await this.geminiCounter.countSheetsLive(source, roi, gaugeName);

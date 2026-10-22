@@ -151,7 +151,10 @@ class ROIViewer {
     ctx.restore();
 
     // 4. Dibujo de Líneas y Puntos Verde Neón sobre cada lámina detectada en vivo
-    this.markers = detectedMarkers;
+    const activeMarkers = (this.geminiMarkersLockUntil && Date.now() < this.geminiMarkersLockUntil && this.geminiMarkers)
+      ? this.geminiMarkers
+      : detectedMarkers;
+    this.markers = activeMarkers;
 
     ctx.save();
     ctx.shadowColor = this.neonColor;
@@ -159,8 +162,8 @@ class ROIViewer {
     ctx.strokeStyle = this.neonColor;
     ctx.lineWidth = 2.0;
 
-    for (let i = 0; i < detectedMarkers.length; i++) {
-      const m = detectedMarkers[i];
+    for (let i = 0; i < activeMarkers.length; i++) {
+      const m = activeMarkers[i];
       const y = m.canvasY;
 
       // Línea horizontal que resalta el canto
@@ -310,7 +313,7 @@ class ROIViewer {
     const roi = this.getAbsoluteROI();
     this._saveHistory();
 
-    this.markers = normalizedYList.map((normY, idx) => {
+    const mapped = normalizedYList.map((normY, idx) => {
       const cy = Math.round(roi.y + normY * roi.height);
       return {
         id: idx + 1,
@@ -319,6 +322,10 @@ class ROIViewer {
         canvasX: roi.x + roi.width / 2
       };
     });
+
+    this.markers = mapped;
+    this.geminiMarkers = mapped;
+    this.geminiMarkersLockUntil = Date.now() + 5000; // Mantener bloqueado y visible 5 segundos
 
     if (this.isFrozen) {
       this.redrawFrozenCanvas();
